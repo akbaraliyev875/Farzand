@@ -1,16 +1,17 @@
 """
-AI kontent tahlili — OpenAI GPT-4o orqali skrinshot tahlili.
-Agar OpenAI API key bo'lmasa, oddiy "unknown" qaytaradi.
+AI kontent tahlili — Google Gemini orqali skrinshot tahlili.
+Agar Gemini API key bo'lmasa, oddiy "unknown" qaytaradi.
 """
 
-import base64
 import logging
 from io import BytesIO
 
 from aiogram import Bot
 from aiogram.types import PhotoSize
+from google import genai
+from google.genai import types
 
-from bot.config import OPENAI_API_KEY
+from bot.config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ async def analyze_screenshot(bot: Bot, photo: PhotoSize) -> str:
     Skrinshotni AI orqali tahlil qilish.
     Qaytaradi: 'safe', 'violence', 'adult', 'gambling', 'unknown'
     """
-    if not OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY sozlanmagan. Tahlil o'tkazib yuborildi.")
+    if not GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY sozlanmagan. Tahlil o'tkazib yuborildi.")
         return "unknown"
 
     try:
@@ -29,43 +30,30 @@ async def analyze_screenshot(bot: Bot, photo: PhotoSize) -> str:
         file = await bot.get_file(photo.file_id)
         file_bytes = BytesIO()
         await bot.download_file(file.file_path, file_bytes)
-        file_bytes.seek(0)
+        image_data = file_bytes.getvalue()
 
-        # Base64 ga o'tkazish
-        base64_image = base64.b64encode(file_bytes.read()).decode("utf-8")
+        # Gemini API ga so'rov
+        client = genai.Client(api_key=GEMINI_API_KEY)
 
-        # OpenAI API ga so'rov
-        import openai
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": (
-                                "Bu rasmni tahlil qil va quyidagi kategoriyalardan "
-                                "faqat BIRINI qaytara:\n"
-                                "SAFE | VIOLENCE | ADULT | GAMBLING | UNKNOWN\n"
-                                "Faqat kategoriya nomini yoz, boshqa narsa emas."
-                            )
-                        }
-                    ]
-                }
-            ],
-            max_tokens=10
+        prompt = (
+            "Bu rasmni tahlil qil va quyidagi kategoriyalardan "
+            "faqat BIRINI qaytara:\n"
+            "SAFE | VIOLENCE | ADULT | GAMBLING | UNKNOWN\n"
+            "Faqat kategoriya nomini yoz, boshqa narsa emas."
         )
 
-        result = response.choices[0].message.content.strip().lower()
+        response = await client.aio.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                types.Part.from_bytes(
+                    data=image_data,
+                    mime_type='image/jpeg',
+                ),
+                prompt,
+            ]
+        )
+
+        result = response.text.strip().lower()
 
         # Natijani normalizatsiya
         valid = {"safe", "violence", "adult", "gambling", "unknown"}
