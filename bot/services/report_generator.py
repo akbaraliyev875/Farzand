@@ -51,10 +51,11 @@ async def generate_report_text(child_id: int, target_date: date = None) -> str:
     if last_test:
         risk_emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}
         risk_names = {"low": "Past", "medium": "O'rtacha", "high": "Yuqori"}
+        unknown_str = "Noma'lum"
         test_text = (
             f"\n\n📝 <b>Oxirgi test:</b>\n"
             f"  {risk_emoji.get(last_test.risk_level, '⚪')} "
-            f"{risk_names.get(last_test.risk_level, 'Noma\'lum')} xavf "
+            f"{risk_names.get(last_test.risk_level, unknown_str)} xavf "
             f"(ball: {last_test.score}/24)"
         )
 
