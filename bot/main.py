@@ -19,9 +19,15 @@ from bot.handlers.parent.start import router as parent_start_router
 from bot.handlers.parent.link_child import router as parent_link_router
 from bot.handlers.parent.reports import router as parent_report_router
 from bot.handlers.parent.content_check import router as parent_check_router
+from bot.handlers.parent.ai_assistant import router as parent_ai_router
 from bot.handlers.child.start import router as child_start_router
 from bot.handlers.child.connect import router as child_connect_router
 from bot.handlers.child.tests import router as child_tests_router
+from bot.handlers.child.profile import router as child_profile_router
+from bot.handlers.child.pomodoro import router as child_pomodoro_router
+from bot.handlers.child.tasks_mood import router as child_tasks_mood_router
+from bot.handlers.child.simulator import router as child_simulator_router
+from bot.handlers.parent.tasks_mood import router as parent_tasks_mood_router
 
 # Middlewares
 from bot.middlewares.activity_tracker import ActivityTrackerMiddleware
@@ -59,9 +65,29 @@ async def on_startup(bot: Bot):
     setup_scheduler()
     logger.info("✅ Scheduler ishga tushdi")
 
+    # Bot menyusini sozlash
+    try:
+        from aiogram.types import BotCommand
+        commands = [
+            BotCommand(command="start", description="Botni ishga tushirish"),
+            BotCommand(command="help", description="Yordam va qo'llanma"),
+            BotCommand(command="report", description="Hisobot (Ota-ona)"),
+            BotCommand(command="check", description="Tekshirish (Ota-ona)"),
+            BotCommand(command="connect", description="Bog'lanish (Farzand)"),
+            BotCommand(command="test", description="Test yechish (Farzand)"),
+        ]
+        await bot.set_my_commands(commands)
+        logger.info("✅ Bot menyusi o'rnatildi")
+    except Exception as e:
+        logger.warning(f"⚠️ Bot menyusini o'rnatib bo'lmadi: {e}")
+
+
     # Bot ma'lumotlari
-    me = await bot.get_me()
-    logger.info(f"✅ Bot: @{me.username} ({me.full_name})")
+    try:
+        me = await bot.get_me()
+        logger.info(f"✅ Bot: @{me.username} ({me.full_name})")
+    except Exception as e:
+        logger.warning(f"⚠️ Bot ma'lumotlarini yuklab bo'lmadi (tarmoq xatosi): {e}")
     logger.info("🛡️ Farzand Nazorati Bot tayyor!")
 
 
@@ -100,9 +126,15 @@ async def main():
         parent_link_router,     # /link
         parent_report_router,   # /report
         parent_check_router,    # /check, rasmlar
+        parent_ai_router,       # AI yordamchi
         child_connect_router,   # /connect (FSM bilan)
         child_tests_router,     # /test (FSM bilan)
-        child_start_router,     # Farzand menyusi tugmalari
+        child_profile_router,   # Profile va xohishlar
+        child_pomodoro_router,  # Pomodoro
+        child_simulator_router, # Simulyator
+        child_tasks_mood_router,# Farzand vazifa va kayfiyat
+        parent_tasks_mood_router,# Ota-ona vazifa va kayfiyat
+        child_start_router,     # Qolgan barcha child handlerlar (Fallback)ri
     )
 
     # Lifecycle

@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from bot.config import DB_URL
 from database.models import (
     Base, User, FamilyLink, ActivityLog,
-    KeywordAlert, TestResult, ContentCheck, DailyTip
+    KeywordAlert, TestResult, ContentCheck, DailyTip,
+    Task, MoodLog
 )
 
 # Async engine va session
@@ -66,6 +67,16 @@ async def update_user_role(user_id: int, role: str):
         user = result.scalar_one_or_none()
         if user:
             user.role = role
+            await session.commit()
+
+
+async def update_user_premium(user_id: int, is_premium: bool):
+    """Foydalanuvchini premium holatini yangilash."""
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.is_premium = is_premium
             await session.commit()
 
 
@@ -357,3 +368,157 @@ async def seed_tips():
         ]
         session.add_all(tips)
         await session.commit()
+
+
+# ─── CHILD PROFILES ──────────────────────────────────────────
+
+from database.models import ChildProfile
+
+async def get_child_profile(child_id: int) -> Optional[ChildProfile]:
+    """Farzand profilini olish."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ChildProfile).where(ChildProfile.child_id == child_id)
+        )
+        return result.scalar_one_or_none()
+
+
+async def update_child_profile(child_id: int, **kwargs):
+    """Farzand profilini yangilash yoki yaratish."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ChildProfile).where(ChildProfile.child_id == child_id)
+        )
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            profile = ChildProfile(child_id=child_id)
+            session.add(profile)
+            
+        for key, value in kwargs.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+                
+        await session.commit()
+
+
+# ─── TASKS & POINTS ──────────────────────────────────────────
+
+async def create_task(parent_id: int, child_id: int, title: str, points: int) -> Task:
+    """Yangi vazifa yaratish."""
+    async with async_session() as session:
+        task = Task(
+            parent_id=parent_id,
+            child_id=child_id,
+            title=title,
+            points=points,
+            status="created"
+        )
+        session.add(task)
+        await session.commit()
+        return task
+
+
+async def get_tasks_for_child(child_id: int, status: str = None) -> list[Task]:
+    """Farzand uchun vazifalar ro'yxatini olish."""
+    async with async_session() as session:
+        query = select(Task).where(Task.child_id == child_id)
+        if status:
+            query = query.where(Task.status == status)
+        query = query.order_by(Task.created_at.desc())
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
+async def get_tasks_for_parent(parent_id: int) -> list[Task]:
+    """Ota-ona bergan barcha vazifalarni olish."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Task).where(Task.parent_id == parent_id).order_by(Task.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def get_task_by_id(task_id: int) -> Optional[Task]:
+    """Vazifani ID bo'yicha olish."""
+    async with async_session() as session:
+        result = await session.execute(select(Task).where(Task.id == task_id))
+        return result.scalar_one_or_none()
+
+
+async def update_task_status(task_id: int, status: str):
+    """Vazifa holatini yangilash."""
+    async with async_session() as session:
+        result = await session.execute(select(Task).where(Task.id == task_id))
+        task = result.scalar_one_or_none()
+        if task:
+            task.status = status
+            await session.commit()
+
+
+async def update_user_points(user_id: int, points_diff: int):
+    """Farzandning bonus ballarini yangilash (kamaytirish yoki ko'paytirish)."""
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.points = (user.points or 0) + points_diff
+            await session.commit()
+
+
+# ─── MOOD LOGS ───────────────────────────────────────────────
+
+async def log_mood(child_id: int, mood: str) -> MoodLog:
+    """Kayfiyatni saqlash."""
+    async with async_session() as session:
+        mood_log = MoodLog(child_id=child_id, mood=mood)
+        session.add(mood_log)
+        await session.commit()
+        return mood_log
+
+
+async def get_latest_moods(child_id: int, limit: int = 7) -> list[MoodLog]:
+    """Farzandning so'nggi kunlardagi kayfiyatlarini olish."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(MoodLog)
+            .where(MoodLog.child_id == child_id)
+            .order_by(MoodLog.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+
+# ─── KUNDALIK YUTUQLAR (GRATITUDE) & XULQ-ATVOR ──────────
+
+from database.models import GratitudeLog, BehaviorLog
+
+async def add_gratitude_log(child_id: int, text: str) -> GratitudeLog:
+    """Kundalik yutuq (gratitude) yozuvini qo'shish."""
+    async with async_session() as session:
+        log = GratitudeLog(child_id=child_id, text=text)
+        session.add(log)
+        await session.commit()
+        return log
+
+async def get_gratitude_logs(child_id: int, limit: int = 10) -> list[GratitudeLog]:
+    """Farzandning oxirgi yutuqlarini olish."""
+    async with async_session() as session:
+        query = select(GratitudeLog).where(GratitudeLog.child_id == child_id).order_by(GratitudeLog.created_at.desc()).limit(limit)
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+async def add_behavior_log(child_id: int, parent_id: int, stars: int, reason: str) -> BehaviorLog:
+    """Xulq-atvor reytingi yozuvini qo'shish."""
+    async with async_session() as session:
+        log = BehaviorLog(child_id=child_id, parent_id=parent_id, stars=stars, reason=reason)
+        session.add(log)
+        await session.commit()
+        return log
+
+async def get_behavior_logs(child_id: int, limit: int = 10) -> list[BehaviorLog]:
+    """Farzandning oxirgi xulq-atvor reytinglarini olish."""
+    async with async_session() as session:
+        query = select(BehaviorLog).where(BehaviorLog.child_id == child_id).order_by(BehaviorLog.created_at.desc()).limit(limit)
+        result = await session.execute(query)
+        return list(result.scalars().all())

@@ -3,89 +3,122 @@ Farzand start handleri.
 Farzand uchun /start va asosiy interaksiyalar.
 """
 
+import os
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from database import crud
-from bot.keyboards.child_kb import child_main_kb, connect_kb
+from bot.keyboards.child_kb import child_main_kb, connect_kb, guide_pagination_kb
+from bot.services.ai_analyzer import generate_dynamic_guide
 
 router = Router()
 
-
-LEARNING_MATERIALS = [
-    {
-        "title": "🔐 Parol xavfsizligi",
-        "content": (
-            "🔐 <b>Kuchli parol yaratish qoidalari:</b>\n\n"
-            "1️⃣ Kamida 8 belgidan iborat bo'lsin\n"
-            "2️⃣ Katta va kichik harflar aralashtiring\n"
-            "3️⃣ Raqam va maxsus belgilar qo'shing (!@#$)\n"
-            "4️⃣ Ismingiz yoki tug'ilgan kuningizni ishlatmang\n"
-            "5️⃣ Har bir akkaunt uchun alohida parol\n\n"
-            "❌ Yomon parol: <code>ali2010</code>\n"
-            "✅ Yaxshi parol: <code>K!tob_0qish#2024</code>"
-        )
-    },
-    {
-        "title": "🎣 Fishing hujumlar",
-        "content": (
-            "🎣 <b>Fishing (phishing) nima?</b>\n\n"
-            "Bu — firibgarlar sizni aldab, parolingizni "
-            "olishga harakat qiladigan usul.\n\n"
-            "⚠️ <b>Qanday aniqlash:</b>\n"
-            "• Noma'lum linklar yuboriladi\n"
-            "• 'Tabriklaymiz, siz yutdingiz!' degan xabarlar\n"
-            "• Tezda pul yuborishni so'rashadi\n\n"
-            "🛡️ <b>Nima qilish kerak:</b>\n"
-            "• Noma'lum linkni OCHMANG\n"
-            "• Parolni hech kimga bermang\n"
-            "• Shubhali xabar kelsa — ota-onangizga ayting"
-        )
-    },
-    {
-        "title": "👥 Onlayn bulling",
-        "content": (
-            "👥 <b>Onlayn bulling (kiberbulling) nima?</b>\n\n"
-            "Bu — internetda biror kishini haqorat qilish, "
-            "qo'rqitish yoki kamsitish.\n\n"
-            "😢 <b>Misollar:</b>\n"
-            "• Guruhda birovni masxara qilish\n"
-            "• Shaxsiy rasm/videoni ruxsatsiz tarqatish\n"
-            "• Doimiy yomon xabarlar yozish\n\n"
-            "💪 <b>Nima qilish kerak:</b>\n"
-            "• Javob bermang va blokga oling\n"
-            "• Skrinshotni saqlang\n"
-            "• Ota-onangiz yoki o'qituvchingizga ayting\n"
-            "• Bu sizning aybingiz EMAS!"
-        )
-    },
-    {
-        "title": "📱 Ekran vaqti",
-        "content": (
-            "📱 <b>Ekran vaqtini boshqarish:</b>\n\n"
-            "⏰ <b>Tavsiya etilgan vaqt:</b>\n"
-            "• Maktab kunlari: 1-2 soat\n"
-            "• Dam olish kunlari: 2-3 soat\n\n"
-            "🌟 <b>Foydali odatlar:</b>\n"
-            "• Dars qilishdan oldin telefon ishlatmang\n"
-            "• Uxlashdan 1 soat oldin ekranni o'chiring\n"
-            "• Har 30 daqiqada 5 daqiqa dam oling\n"
-            "• Jismoniy faoliyat bilan almashtirib turing"
-        )
-    },
-]
-
+class GuideStates(StatesGroup):
+    viewing_guide = State()
 
 @router.message(F.text == "📚 O'quv materiallar")
-async def btn_learn(message: Message):
-    """O'quv materiallar — xavfsizlik darsliklari."""
+async def btn_learn(message: Message, state: FSMContext):
+    """O'quv materiallar — dinamik generatsiya qilinadi."""
     user = await crud.get_user(message.from_user.id)
     if not user or user.role != "child":
         return
 
-    for material in LEARNING_MATERIALS:
-        await message.answer(material["content"], parse_mode="HTML")
+    wait_msg = await message.answer("⏳ <i>Qiziqarli qo'llanma tayyorlanmoqda, kuting...</i>", parse_mode="HTML")
+    
+    guide_data = await generate_dynamic_guide()
+    if not guide_data:
+        await wait_msg.edit_text("⚠️ Xatolik yuz berdi yoki API ishlamayapti.")
+        return
+
+    await state.set_state(GuideStates.viewing_guide)
+    await state.update_data(guide=guide_data, current_page=0)
+
+    page = guide_data[0]
+    image_name = page.get("image", "online_learning")
+    # Fallback agar noto'g'ri nom berilsa
+    valid_images = ["time_management", "cyber_security", "online_learning", "cyber_bullying"]
+    if image_name not in valid_images:
+        image_name = "online_learning"
+        
+    photo_path = os.path.join(os.getcwd(), "bot", "assets", f"{image_name}.png")
+    
+    # Rasmni topmasa text o'zini yuborish uchun
+    content_text = page['content'].replace('<br>', '\n').replace('<br/>', '\n').replace('</br>', '\n')
+    try:
+        photo = FSInputFile(photo_path)
+        await message.answer_photo(
+            photo=photo,
+            caption=f"<b>{page['title']}</b>\n\n{content_text}",
+            parse_mode="HTML",
+            reply_markup=guide_pagination_kb(0, len(guide_data))
+        )
+    except Exception:
+        await message.answer(
+            f"<b>{page['title']}</b>\n\n{content_text}",
+            parse_mode="HTML",
+            reply_markup=guide_pagination_kb(0, len(guide_data))
+        )
+        
+    await wait_msg.delete()
+
+
+@router.callback_query(F.data.startswith("guide_"))
+async def process_guide_pagination(callback: CallbackQuery, state: FSMContext):
+    """Qo'llanmani varaqlash."""
+    if callback.data == "guide_ignore":
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    guide_data = data.get("guide", [])
+    if not guide_data:
+        await callback.answer("⏳ Vaqt tugadi, menyudan qaytadan tanlang.", show_alert=True)
+        return
+
+    action, page_str = callback.data.split("_")[1], callback.data.split("_")[2]
+    current_page = int(page_str)
+
+    if action == "prev":
+        new_page_idx = current_page - 1
+    elif action == "next":
+        new_page_idx = current_page + 1
+    else:
+        new_page_idx = current_page
+
+    if 0 <= new_page_idx < len(guide_data):
+        page = guide_data[new_page_idx]
+        image_name = page.get("image", "online_learning")
+        
+        valid_images = ["time_management", "cyber_security", "online_learning", "cyber_bullying"]
+        if image_name not in valid_images:
+            image_name = "online_learning"
+            
+        photo_path = os.path.join(os.getcwd(), "bot", "assets", f"{image_name}.png")
+        
+        await state.update_data(current_page=new_page_idx)
+        content_text = page['content'].replace('<br>', '\n').replace('<br/>', '\n').replace('</br>', '\n')
+        try:
+            photo = FSInputFile(photo_path)
+            media = InputMediaPhoto(
+                media=photo,
+                caption=f"<b>{page['title']}</b>\n\n{content_text}",
+                parse_mode="HTML"
+            )
+            await callback.message.edit_media(
+                media=media,
+                reply_markup=guide_pagination_kb(new_page_idx, len(guide_data))
+            )
+        except Exception:
+            await callback.message.edit_text(
+                text=f"<b>{page['title']}</b>\n\n{content_text}",
+                parse_mode="HTML",
+                reply_markup=guide_pagination_kb(new_page_idx, len(guide_data))
+            )
+    
+    await callback.answer()
 
 
 @router.message(F.text == "📊 Mening statistikam")

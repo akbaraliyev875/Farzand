@@ -206,3 +206,38 @@ async def btn_settings(message: Message):
         f"ℹ️ Premium obuna uchun /premium buyrug'ini yozing.",
         parse_mode="HTML"
     )
+
+
+@router.message(Command("premium"))
+async def cmd_premium(message: Message):
+    """/premium — Premium sotib olish haqida ma'lumot."""
+    user = await crud.get_user(message.from_user.id)
+    if not user:
+        return
+        
+    if user.is_premium:
+        await message.answer("🎉 Siz allaqachon **Premium** foydalanuvchisiz!\nCheksiz imkoniyatlardan foydalaning.", parse_mode="Markdown")
+        return
+        
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💎 Premium sotib olish (Test: Bepul)", callback_data="buy_premium")]
+    ])
+    
+    await message.answer(
+        "💎 <b>Premium obuna</b>\n\n"
+        "Premium orqali quyidagi cheksiz imkoniyatlarga ega bo'lasiz:\n"
+        "✅ Cheksiz kontent tekshiruvlar (AI)\n"
+        "✅ Kengaytirilgan hisobotlar\n"
+        "✅ Tezkor ogohlantirishlar\n\n"
+        "Hozir sinov tariqasida buni tekinga yoqishingiz mumkin!",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "buy_premium")
+async def process_buy_premium(callback: CallbackQuery):
+    await crud.update_user_premium(callback.from_user.id, True)
+    await callback.message.edit_text("🎉 Tabriklaymiz! Siz muvaffaqiyatli <b>Premium</b> obunaga o'tdingiz. Barcha cheklovlar olib tashlandi.", parse_mode="HTML")
+    await callback.answer()

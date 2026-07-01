@@ -26,6 +26,7 @@ class User(Base):
     language = Column(String(5), default="uz")
     created_at = Column(DateTime, default=datetime.utcnow)
     is_premium = Column(Boolean, default=False)
+    points = Column(Integer, default=0)
 
     # Relationships
     children_links = relationship(
@@ -110,3 +111,73 @@ class DailyTip(Base):
     tip_ru = Column(Text, nullable=True)
     category = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
+
+
+class ChildProfile(Base):
+    """Farzandning profili: maqsadlar, qobiliyatlar, tug'ilgan kun."""
+    __tablename__ = "child_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    child_id = Column(BigInteger, ForeignKey("users.id"), unique=True, nullable=False)
+    birthday = Column(String(20), nullable=True)  # DD.MM.YYYY
+    abilities = Column(Text, nullable=True)
+    goals = Column(Text, nullable=True)
+    wishes = Column(Text, nullable=True)
+    plans = Column(Text, nullable=True)
+
+    child = relationship("User", foreign_keys=[child_id])
+
+
+class Task(Base):
+    """Vazifalar jadvali."""
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    parent_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    child_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    title = Column(String(200), nullable=False)
+    points = Column(Integer, default=0)
+    status = Column(String(20), default="created")  # 'created', 'done', 'approved'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    parent = relationship("User", foreign_keys=[parent_id])
+    child = relationship("User", foreign_keys=[child_id])
+
+
+class MoodLog(Base):
+    """Farzandning kayfiyat kundaligi."""
+    __tablename__ = "mood_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    child_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    mood = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    child = relationship("User", foreign_keys=[child_id])
+
+
+class GratitudeLog(Base):
+    """Kundalik yutuqlar (Gratitude Journal)."""
+    __tablename__ = "gratitude_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    child_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    child = relationship("User", foreign_keys=[child_id])
+
+
+class BehaviorLog(Base):
+    """Xulq-atvor reytingi (Ota-ona bahosi)."""
+    __tablename__ = "behavior_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    child_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    parent_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    stars = Column(Integer, nullable=False)  # masalan: 1 dan 5 gacha
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    child = relationship("User", foreign_keys=[child_id])
+    parent = relationship("User", foreign_keys=[parent_id])
